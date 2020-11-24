@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: mdillon/postgis:11
+    #image: postgres:12
+    restart: always
+    ports:
+      - 5432:5432
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+
+  graphql-engine:
+    image: hasura/graphql-engine:v1.3.3.cli-migrations-v2
+    #image: hasura/graphql-engine:v1.3.1.cli-migrations-v2
+    ports:
+      - 8080:8080
+    depends_on:
+      - "postgres"
+    restart: always
+    volumes:
+      - ./migrations:/hasura-migrations/1606251529096_init
+      - ./metadata:/hasura-metadata
+    environment:
+        HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+        HASURA_GRAPHQL_DEV_MODE: "yes"
+        HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:postgrespassword@postgres:5432/postgres
+
+volumes:
+  db_data:

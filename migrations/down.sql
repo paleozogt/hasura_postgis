@@ -1,0 +1,4 @@
+DROP TABLE user_location
+DROP TABLE landmark
+DROP TABLE user_landmarks
+DROP FUNCTION search_landmarks_near_user
