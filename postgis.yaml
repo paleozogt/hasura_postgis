@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: List
+items:
+
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: postgis
+    name: postgis
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: postgis
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: postgis
+      spec:
+        containers:
+        - image: mdillon/postgis:11
+          name: postgis
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hasura
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hasura
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgis-db-data
+              subPath: data
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+        volumes:
+          - name: postgis-db-data
+            persistentVolumeClaim:
+              claimName: postgis-db-data
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: postgis
+    labels:
+      app: postgis
+  spec:
+    type: ClusterIP
+    ports:
+      - port: 5432
+        protocol: TCP
+    selector:
+      app: postgis
+
+
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    labels:
+      app: postgis
+    name: postgis-db-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi

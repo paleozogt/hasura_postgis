@@ -1,0 +1,180 @@
+apiVersion: apps/v1
+kind: List
+items:
+
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: hasura
+    name: hasura
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: hasura
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: hasura
+      spec:
+        containers:
+        - image: hasura/graphql-engine:v1.3.3.cli-migrations-v2
+          name: hasura
+          env:
+            - name: HASURA_GRAPHQL_ENABLE_CONSOLE
+              valueFrom:
+                configMapKeyRef:
+                  name: hasura
+                  key: HASURA_GRAPHQL_ENABLE_CONSOLE
+            - name: HASURA_GRAPHQL_DEV_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: hasura
+                  key: HASURA_GRAPHQL_DEV_MODE
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hasura
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hasura
+                  key: POSTGRES_PASSWORD
+            - name: HASURA_GRAPHQL_DATABASE_URL
+              value: postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgis:5432/postgres
+          volumeMounts:
+            - mountPath: /hasura-migrations/1606251529096_init
+              name: hasura-migrations
+            - mountPath: /hasura-metadata
+              name: hasura-metadata
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+        volumes:
+          - name: hasura-migrations
+            configMap:
+              name: hasura-migrations
+          - name: hasura-metadata
+            configMap:
+              name: hasura-metadata
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: hasura
+    labels:
+      app: hasura
+  spec:
+    type: NodePort
+    ports:
+      - port: 80
+        targetPort: 8080
+        protocol: TCP
+    selector:
+      app: hasura
+
+- apiVersion: networking.k8s.io/v1beta1
+  kind: Ingress
+  metadata:
+    name: hasura
+    annotations:
+  spec:
+    rules:
+      - host: ${KUBE_APP}.${KUBE_NAMESPACE}.${INGRESS_BASE_URL}
+        http:
+          paths:
+            - backend:
+                serviceName: hasura
+                servicePort: 80
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: hasura-migrations
+  data:
+    up.sql: |
+      -- Create PostGIS extensions if they don't exist
+      CREATE EXTENSION IF NOT EXISTS postgis;
+      CREATE EXTENSION IF NOT EXISTS postgis_topology;
+      
+      -- User location data
+      CREATE TABLE user_location (
+        user_id INTEGER PRIMARY KEY,
+        location GEOGRAPHY(Point)
+      );
+      
+      -- Landmark location data
+      CREATE TABLE landmark (
+        id SERIAL PRIMARY KEY,
+        name TEXT,
+        type TEXT,
+        location GEOGRAPHY(Point)
+      );
+
+      -- SETOF table
+      CREATE TABLE user_landmarks (
+        user_id INTEGER,
+        location GEOGRAPHY(Point),
+        nearby_landmarks JSON
+      );
+      
+      -- function returns a list of landmarks near a user based on the
+      -- input arguments distance_kms and userid
+      CREATE FUNCTION search_landmarks_near_user(userid integer, distance_kms integer)
+      RETURNS SETOF user_landmarks AS $$
+        SELECT  A.user_id, A.location,
+        (SELECT json_agg(row_to_json(B)) FROM landmark B
+         WHERE (
+           ST_Distance(
+             ST_Transform(B.location::Geometry, 3857),
+             ST_Transform(A.location::Geometry, 3857)
+           ) /1000) < distance_kms
+         ) AS nearby_landmarks
+        FROM user_location A where A.user_id = userid
+      $$ LANGUAGE sql STABLE;
+    down.sql: |
+      DROP TABLE user_location
+      DROP TABLE landmark
+      DROP TABLE user_landmarks
+      DROP FUNCTION search_landmarks_near_user
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: hasura-metadata
+  data:
+    actions.graphql: ""
+    actions.yaml: |
+      actions: []
+      custom_types:
+        enums: []
+        input_objects: []
+        objects: []
+        scalars: []
+    allow_list.yaml: |
+      []
+    cron_triggers.yaml: |
+      []
+    functions.yaml: |
+      - function:
+          schema: public
+          name: search_landmarks_near_user
+    query_collections.yaml: |
+      []
+    remote_schemas.yaml: |
+      []
+    tables.yaml: |
+      - table:
+          schema: public
+          name: user_location
+      - table:
+          schema: public
+          name: landmark
+      - table:
+          schema: public
+          name: user_landmarks
+    version.yaml: |
+      version: 2

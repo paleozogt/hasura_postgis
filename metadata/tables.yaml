@@ -1,9 +1,0 @@
-- table:
-    schema: public
-    name: user_location
-- table:
-    schema: public
-    name: landmark
-- table:
-    schema: public
-    name: user_landmarks
